@@ -8,6 +8,8 @@ import argparse
 import redis
 import csv
 import datetime
+import logging
+from tqdm import tqdm
 
 
 def parse_dataset_row(line):
@@ -70,6 +72,7 @@ parser.add_argument("--port", type=int, help="redis instance port", default=6379
 parser.add_argument(
     "--password", type=int, help="redis instance password", default=None
 )
+parser.add_argument("--verbose", help="enable verbose output", action="store_true")
 parser.add_argument("--host", type=str, help="redis instance host", default="127.0.0.1")
 parser.add_argument(
     "--csv",
@@ -82,6 +85,11 @@ parser.add_argument(
 )
 args = parser.parse_args()
 
+log_level = logging.ERROR
+if args.verbose is True:
+    log_level = logging.INFO
+logging.basicConfig(level=log_level)
+
 # redis setup
 redis_obj = redis.Redis(host=args.host, port=args.port, password=args.password)
 temperature_key = "ts:temperature"
@@ -91,7 +99,7 @@ relative_humidity_key = "ts:relative_humidity"
 with open(args.csv, newline="") as csv_file:
     csv_reader = csv.reader(csv_file, delimiter=args.csv_delimiter)
     next(csv_reader, None)  # skip the headers
-    for row in csv_reader:
+    for row in tqdm(csv_reader):
         (
             result,
             unix_ts,
@@ -100,15 +108,33 @@ with open(args.csv, newline="") as csv_file:
             relative_humidity,
         ) = parse_dataset_row(row)
         if result is True:
-            if temperature_c is not None:
-                redis_obj.execute_command(
-                    "ts.add", temperature_key, unix_ts, temperature_c
-                )
-            if carbon_monoxide is not None:
-                redis_obj.execute_command(
-                    "ts.add", carbon_monoxide_key, unix_ts, carbon_monoxide
-                )
-            if relative_humidity is not None:
-                redis_obj.execute_command(
-                    "ts.add", relative_humidity_key, unix_ts, relative_humidity
-                )
+            try:
+                if temperature_c is not None:
+                    redis_obj.execute_command(
+                        "ts.add", temperature_key, unix_ts, temperature_c
+                    )
+                    logging.info(
+                        "ts.add {0} {1} {2}".format(
+                            temperature_key, unix_ts, temperature_c
+                        )
+                    )
+                if carbon_monoxide is not None:
+                    redis_obj.execute_command(
+                        "ts.add", carbon_monoxide_key, unix_ts, carbon_monoxide
+                    )
+                    logging.info(
+                        "ts.add {0} {1} {2}".format(
+                            carbon_monoxide_key, unix_ts, carbon_monoxide
+                        )
+                    )
+                if relative_humidity is not None:
+                    redis_obj.execute_command(
+                        "ts.add", relative_humidity_key, unix_ts, relative_humidity
+                    )
+                    logging.info(
+                        "ts.add {0} {1} {2}".format(
+                            relative_humidity_key, unix_ts, relative_humidity
+                        )
+                    )
+            except redis.RedisError as err:
+                logging.error(err)
